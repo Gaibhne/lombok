@@ -83,8 +83,8 @@ public class LombokProcessor extends AbstractProcessor {
 		
 		this.processingEnv = (JavacProcessingEnvironment) procEnv;
 		placePostCompileAndDontMakeForceRoundDummiesHook();
-		transformer = new JavacTransformer(procEnv.getMessager());
 		trees = Trees.instance(procEnv);
+		transformer = new JavacTransformer(procEnv.getMessager(), trees);
 		SortedSet<Long> p = transformer.getPriorities();
 		if (p.isEmpty()) {
 			this.priorityLevels = new long[] {0L};
@@ -217,7 +217,26 @@ public class LombokProcessor extends AbstractProcessor {
 		}
 	}
 	
-	private final IdentityHashMap<JCCompilationUnit, Long> roots = new IdentityHashMap<JCCompilationUnit, Long>();
+	public static class JavacCompilationUnit {
+		private final JCCompilationUnit jcCu;
+		private final Element mirrorElement;
+		
+		public JavacCompilationUnit(JCCompilationUnit jcCu, Element mirrorElement) {
+			this.jcCu = jcCu;
+			this.mirrorElement = mirrorElement;
+		}
+		
+		public JCCompilationUnit getJcCu() {
+			return jcCu;
+		}
+		
+		public Element getMirror() {
+			return mirrorElement;
+		}
+	}
+	
+	private final IdentityHashMap<JavacCompilationUnit, Long> roots = new IdentityHashMap<JavacCompilationUnit, Long>();
+	private final IdentityHashMap<JCCompilationUnit, Void> covered = new IdentityHashMap<JCCompilationUnit, Void>();
 	private long[] priorityLevels;
 	private Set<Long> priorityLevelsRequiringResolutionReset;
 	
@@ -233,21 +252,22 @@ public class LombokProcessor extends AbstractProcessor {
 		for (Element element : roundEnv.getRootElements()) {
 			JCCompilationUnit unit = toUnit(element);
 			if (unit == null) continue;
-			if (roots.containsKey(unit)) continue;
-			roots.put(unit, priorityLevels[0]);
+			if (covered.containsKey(unit)) continue;
+			roots.put(new JavacCompilationUnit(unit, element), priorityLevels[0]);
+			covered.put(unit, null);
 		}
 		
 		while (true) {
 			// Step 2: For all CUs (in the map, not the roundEnv!), run them across all handlers at their current prio level.
 			
 			for (long prio : priorityLevels) {
-				List<JCCompilationUnit> cusForThisRound = new ArrayList<JCCompilationUnit>();
-				for (Map.Entry<JCCompilationUnit, Long> entry : roots.entrySet()) {
+				List<JavacCompilationUnit> cusForThisRound = new ArrayList<JavacCompilationUnit>();
+				for (Map.Entry<JavacCompilationUnit, Long> entry : roots.entrySet()) {
 					Long prioOfCu = entry.getValue();
 					if (prioOfCu == null || prioOfCu != prio) continue;
 					cusForThisRound.add(entry.getKey());
 				}
-				transformer.transform(prio, processingEnv.getContext(), cusForThisRound);
+				transformer.transform(prio, processingEnv.getContext(), cusForThisRound, roundEnv);
 			}
 			
 			// Step 3: Push up all CUs to the next level. Set level to null if there is no next level.
@@ -256,14 +276,14 @@ public class LombokProcessor extends AbstractProcessor {
 			for (int i = priorityLevels.length - 1; i >= 0; i--) {
 				Long curLevel = priorityLevels[i];
 				Long nextLevel = (i == priorityLevels.length - 1) ? null : priorityLevels[i + 1];
-				List<JCCompilationUnit> cusToAdvance = new ArrayList<JCCompilationUnit>();
-				for (Map.Entry<JCCompilationUnit, Long> entry : roots.entrySet()) {
+				List<JavacCompilationUnit> cusToAdvance = new ArrayList<JavacCompilationUnit>();
+				for (Map.Entry<JavacCompilationUnit, Long> entry : roots.entrySet()) {
 					if (curLevel.equals(entry.getValue())) {
 						cusToAdvance.add(entry.getKey());
 						newLevels.add(nextLevel);
 					}
 				}
-				for (JCCompilationUnit unit : cusToAdvance) {
+				for (JavacCompilationUnit unit : cusToAdvance) {
 					roots.put(unit, nextLevel);
 				}
 			}

@@ -32,6 +32,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import javax.annotation.processing.Messager;
+import javax.annotation.processing.RoundEnvironment;
+import javax.lang.model.element.Element;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 
@@ -72,6 +74,8 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	private final JavacTypes javacTypes;
 	private final Log log;
 	private final Context context;
+	private final Element mirror;
+	private final RoundEnvironment roundEnvironment;
 	
 	/**
 	 * Creates a new JavacAST of the provided Compilation Unit.
@@ -80,7 +84,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	 * @param context A Context object for interfacing with the compiler.
 	 * @param top The compilation unit, which serves as the top level node in the tree to be built.
 	 */
-	public JavacAST(Messager messager, Context context, JCCompilationUnit top) {
+	public JavacAST(Messager messager, Context context, JCCompilationUnit top, Element mirror, RoundEnvironment roundEnvironment) {
 		super(sourceName(top), PackageName.getPackageName(top), new JavacImportList(top), statementTypes());
 		setTop(buildCompilationUnit(top));
 		this.context = context;
@@ -90,6 +94,8 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		this.treeMaker = new JavacTreeMaker(TreeMaker.instance(context));
 		this.symtab = Symtab.instance(context);
 		this.javacTypes = JavacTypes.instance(context);
+		this.mirror = mirror;
+		this.roundEnvironment = roundEnvironment;
 		clearChanged();
 	}
 	
@@ -165,6 +171,14 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	public JavacTreeMaker getTreeMaker() {
 		treeMaker.at(-1);
 		return treeMaker;
+	}
+	
+	public Element getMirror() {
+		return mirror;
+	}
+	
+	public RoundEnvironment getRoundEnvironment() {
+		return roundEnvironment;
 	}
 	
 	/** @return The symbol table used by this AST for symbols. */

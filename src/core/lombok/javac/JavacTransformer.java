@@ -25,7 +25,9 @@ import java.util.ArrayList;
 import java.util.SortedSet;
 
 import javax.annotation.processing.Messager;
+import javax.annotation.processing.RoundEnvironment;
 
+import com.sun.source.util.Trees;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
@@ -34,13 +36,17 @@ import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.List;
 
+import lombok.javac.apt.LombokProcessor.JavacCompilationUnit;
+
 public class JavacTransformer {
 	private final HandlerLibrary handlers;
 	private final Messager messager;
+	private final Trees trees;
 	
-	public JavacTransformer(Messager messager) {
+	public JavacTransformer(Messager messager, Trees trees) {
 		this.messager = messager;
-		this.handlers = HandlerLibrary.load(messager);
+		this.trees = trees;
+		this.handlers = HandlerLibrary.load(messager, this.trees);
 	}
 	
 	public SortedSet<Long> getPriorities() {
@@ -51,10 +57,10 @@ public class JavacTransformer {
 		return handlers.getPrioritiesRequiringResolutionReset();
 	}
 	
-	public void transform(long priority, Context context, java.util.List<JCCompilationUnit> compilationUnitsRaw) {
-		List<JCCompilationUnit> compilationUnits;
+	public void transform(long priority, Context context, java.util.List<JavacCompilationUnit> compilationUnitsRaw, RoundEnvironment roundEnv) {
+		List<JavacCompilationUnit> compilationUnits;
 		if (compilationUnitsRaw instanceof List<?>) {
-			compilationUnits = (List<JCCompilationUnit>)compilationUnitsRaw;
+			compilationUnits = (List<JavacCompilationUnit>) compilationUnitsRaw;
 		} else {
 			compilationUnits = List.nil();
 			for (int i = compilationUnitsRaw.size() -1; i >= 0; i--) {
@@ -64,7 +70,7 @@ public class JavacTransformer {
 		
 		java.util.List<JavacAST> asts = new ArrayList<JavacAST>();
 		
-		for (JCCompilationUnit unit : compilationUnits) asts.add(new JavacAST(messager, context, unit));
+		for (JavacCompilationUnit unit : compilationUnits) asts.add(new JavacAST(messager, context, unit.getJcCu(), unit.getMirror(), roundEnv));
 		
 		for (JavacAST ast : asts) {
 			ast.traverse(new AnnotationVisitor(priority));

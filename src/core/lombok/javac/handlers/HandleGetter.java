@@ -26,10 +26,15 @@ import static lombok.javac.Javac.*;
 import static lombok.javac.JavacTreeMaker.TypeTag.*;
 import static lombok.javac.handlers.JavacHandlerUtil.*;
 
+import com.sun.tools.javac.code.Type.MethodType;
+
+import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+
+import javax.lang.model.element.Element;
 
 import lombok.AccessLevel;
 import lombok.ConfigurationKeys;
@@ -45,7 +50,13 @@ import lombok.javac.handlers.JavacHandlerUtil.FieldAccess;
 
 import org.mangosdk.spi.ProviderFor;
 
+import com.sun.source.tree.Tree;
 import com.sun.tools.javac.code.Flags;
+import com.sun.tools.javac.code.Symbol.ClassSymbol;
+import com.sun.tools.javac.code.Symbol.MethodSymbol;
+import com.sun.tools.javac.code.Symbol.VarSymbol;
+import com.sun.tools.javac.code.Symtab;
+import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCBinary;
@@ -61,6 +72,7 @@ import com.sun.tools.javac.tree.JCTree.JCStatement;
 import com.sun.tools.javac.tree.JCTree.JCSynchronized;
 import com.sun.tools.javac.tree.JCTree.JCTypeParameter;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
+import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.ListBuffer;
@@ -222,6 +234,25 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		injectMethod(fieldNode.up(), createGetter(access, fieldNode, fieldNode.getTreeMaker(), source.get(), lazy, onMethod));
 	}
 	
+	private Element findMirror(Element compilationUnit, JCTree target) {
+		if (compilationUnit == null) return null;
+		ArrayDeque<Element> inspectStack = new ArrayDeque<Element>();
+		inspectStack.add(compilationUnit);
+		while (!inspectStack.isEmpty()) {
+			Element e = inspectStack.pop();
+			Tree tree = trees.getTree(e);
+			if (tree == target) return e;
+			for (Element c : e.getEnclosedElements()) inspectStack.add(c);
+		}
+		return null;
+	}
+	
+	private void fixMirror(Context context, Element fieldMirror, long access, Name methodName) {
+		ClassSymbol cs = (ClassSymbol) fieldMirror.getEnclosingElement();
+		MethodSymbol methodSymbol = new MethodSymbol(access, methodName, new MethodType(List.<Type>nil(), ((VarSymbol) fieldMirror).type, List.<Type>nil(), Symtab.instance(context).methodClass), cs);
+		cs.members_field.enter(methodSymbol);
+	}
+	
 	public JCMethodDecl createGetter(long access, JavacNode field, JavacTreeMaker treeMaker, JCTree source, boolean lazy, List<JCAnnotation> onMethod) {
 		JCVariableDecl fieldNode = (JCVariableDecl) field.get();
 		
@@ -263,6 +294,8 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		decl.mods.annotations = decl.mods.annotations.appendList(delegates);
 		
 		copyJavadoc(field, decl, CopyJavadoc.GETTER);
+		Element jcMirror = field.getAst().getMirror();
+		fixMirror(field.getContext(), findMirror(jcMirror, field.get()), access, methodName);
 		return decl;
 	}
 	
