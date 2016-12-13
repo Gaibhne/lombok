@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -39,6 +40,7 @@ import java.util.SortedSet;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Messager;
 import javax.annotation.processing.ProcessingEnvironment;
+import javax.annotation.processing.Processor;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
 import javax.lang.model.SourceVersion;
@@ -82,6 +84,7 @@ public class LombokProcessor extends AbstractProcessor {
 		}
 		
 		this.processingEnv = (JavacProcessingEnvironment) procEnv;
+		printProcessOrder();
 		placePostCompileAndDontMakeForceRoundDummiesHook();
 		trees = Trees.instance(procEnv);
 		transformer = new JavacTransformer(procEnv.getMessager(), trees);
@@ -94,6 +97,31 @@ public class LombokProcessor extends AbstractProcessor {
 			int i = 0;
 			for (Long prio : p) this.priorityLevels[i++] = prio;
 			this.priorityLevelsRequiringResolutionReset = transformer.getPrioritiesRequiringResolutionReset();
+		}
+	}
+	
+	private void printProcessOrder() {
+		try {
+			Field f1 = this.processingEnv.getClass().getDeclaredField("discoveredProcs");
+			f1.setAccessible(true);
+			Object discoveredProcessors = f1.get(this.processingEnv);
+			Field f2 = discoveredProcessors.getClass().getDeclaredField("processorIterator");
+			f2.setAccessible(true);
+			Iterator<?> it = (Iterator<?>) f2.get(discoveredProcessors);
+			System.out.println("!!! does the processorIterator have more? " + it.hasNext());
+			Field f3 = discoveredProcessors.getClass().getDeclaredField("procStateList");
+			f3.setAccessible(true);
+			ArrayList<?> states = (ArrayList<?>) f3.get(discoveredProcessors);
+			int idx = 1;
+			for (Object state : states) {
+				Field f4 = state.getClass().getDeclaredField("processor");
+				f4.setAccessible(true);
+				javax.annotation.processing.Processor p = (Processor) f4.get(state);
+				System.out.println("!!! Order " + idx + ": " + p.getClass());
+				idx++;
+			}
+		} catch (Exception e) {
+			throw Lombok.sneakyThrow(e);
 		}
 	}
 	
